@@ -85,6 +85,12 @@ pub fn Vec(comptime T: type, comptime size: u3) type {
         pub inline fn distance(self: @This(), other: @This()) T {
             return @sqrt(distanceSquared(self, other));
         }
+
+        pub inline fn cross(self: Vec(T, 3), other: Vec(T, 3)) Vec(T, 3) {
+            var vec = self.get(.yzx).values * other.get(.zxy).values;
+            vec -= self.get(.zxy).values * other.get(.yzx).values;
+            return .init(vec);
+        }
     };
 }
 
@@ -183,4 +189,29 @@ test "Vec.dot" {
             .dot(Vec(f32, 3).init(.{ 0.2, -127.6326, 9 })),
         0.01,
     );
+}
+
+test "Vec.cross" {
+    {
+        const tolerance: @Vector(3, f32) = @splat(1e-5);
+        const expected = @Vector(3, f32){ -2.0 / 3.0, 1.0 / 2.0, 5.0 / 12.0 };
+        const a = Vec(f32, 3).init(.{ 1.0 / 4.0, -1.0 / 2.0, 1.0 });
+        const b = Vec(f32, 3).init(.{ 1.0 / 3.0, 1.0, -2.0 / 3.0 });
+        const actual = a.cross(b).values;
+        if (!@reduce(.And, @abs(expected - actual) < tolerance)) {
+            std.debug.print("actual {}, not within absolute tolerance {} of expected {}\n", .{
+                actual,
+                tolerance,
+                expected,
+            });
+            return error.TestExpectedApproxEqAbs;
+        }
+    }
+    {
+        const expected = @Vector(3, i32){ -26988, -1002, -8142 };
+        const a = Vec(i32, 3).init(.{ 64, 7, -213 });
+        const b = Vec(i32, 3).init(.{ 2, -127, 9 });
+        const actual = a.cross(b).values;
+        try std.testing.expectEqual(expected, actual);
+    }
 }
