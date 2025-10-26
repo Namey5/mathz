@@ -5,7 +5,13 @@ pub const swizzle = @import("swizzle.zig");
 pub const Swizzle = swizzle.Swizzle;
 
 pub fn Vec(comptime T: type, comptime size: u3) type {
-    comptime std.debug.assert(size <= 4);
+    comptime {
+        if (size < 1 or size > 4) @compileError("size must be between 1 and 4");
+        switch (@typeInfo(T)) {
+            .int, .float => {},
+            else => @compileError("T must be an int or float"),
+        }
+    }
     return extern struct {
         pub const len = size;
 
@@ -75,21 +81,24 @@ pub fn Vec(comptime T: type, comptime size: u3) type {
         }
 
         pub inline fn length(self: @This()) T {
+            comptime if (@typeInfo(T) != .float) @compileError("non-squared length is only valid for floating point vectors");
             return @sqrt(self.lengthSquared());
         }
 
         pub inline fn distanceSquared(self: @This(), other: @This()) T {
-            return lengthSquared(.init(other.values - self.values));
+            return init(other.values - self.values).lengthSquared();
         }
 
         pub inline fn distance(self: @This(), other: @This()) T {
+            comptime if (@typeInfo(T) != .float) @compileError("non-squared distance is only valid for floating point vectors");
             return @sqrt(distanceSquared(self, other));
         }
 
-        pub inline fn cross(self: Vec(T, 3), other: Vec(T, 3)) Vec(T, 3) {
+        pub inline fn cross(self: @This(), other: @This()) @This() {
+            comptime if (len != 3) @compileError("cross product is only valid for 3-dimensional vectors");
             var vec = self.get(.yzx).values * other.get(.zxy).values;
             vec -= self.get(.zxy).values * other.get(.yzx).values;
-            return .init(vec);
+            return init(vec);
         }
     };
 }
@@ -178,16 +187,54 @@ test "Vec.set" {
 test "Vec.dot" {
     try std.testing.expectEqual(
         92,
-        Vec(i32, 2)
-            .init(.{ 12, 20 })
-            .dot(Vec(i32, 2).init(.{ 16, -5 })),
+        Vec(i32, 2).dot(
+            .init(.{ 12, 20 }),
+            .init(.{ 16, -5 }),
+        ),
     );
     try std.testing.expectApproxEqAbs(
         -2913.84,
-        Vec(f32, 3)
-            .init(.{ 64.15, 7.8734, -213.53 })
-            .dot(Vec(f32, 3).init(.{ 0.2, -127.6326, 9 })),
+        Vec(f32, 3).dot(
+            .init(.{ 64.15, 7.8734, -213.53 }),
+            .init(.{ 0.2, -127.6326, 9 }),
+        ),
         0.01,
+    );
+}
+
+test "Vec.lengthSquared" {
+    try std.testing.expectEqual(
+        26,
+        Vec(i32, 2).init(.{ 5, -1 }).lengthSquared(),
+    );
+}
+
+test "Vec.length" {
+    try std.testing.expectApproxEqAbs(
+        @sqrt(26.0),
+        Vec(f32, 2).init(.{ 5, -1 }).length(),
+        1e-5,
+    );
+}
+
+test "Vec.distanceSquared" {
+    try std.testing.expectEqual(
+        13,
+        Vec(i32, 2).distanceSquared(
+            .init(.{ 3, 2 }),
+            .init(.{ 5, -1 }),
+        ),
+    );
+}
+
+test "Vec.distance" {
+    try std.testing.expectApproxEqAbs(
+        @sqrt(13.0),
+        Vec(f32, 2).distance(
+            .init(.{ 3, 2 }),
+            .init(.{ 5, -1 }),
+        ),
+        1e-5,
     );
 }
 
@@ -195,9 +242,10 @@ test "Vec.cross" {
     {
         const tolerance: @Vector(3, f32) = @splat(1e-5);
         const expected = @Vector(3, f32){ -2.0 / 3.0, 1.0 / 2.0, 5.0 / 12.0 };
-        const a = Vec(f32, 3).init(.{ 1.0 / 4.0, -1.0 / 2.0, 1.0 });
-        const b = Vec(f32, 3).init(.{ 1.0 / 3.0, 1.0, -2.0 / 3.0 });
-        const actual = a.cross(b).values;
+        const actual = Vec(f32, 3).cross(
+            .init(.{ 1.0 / 4.0, -1.0 / 2.0, 1.0 }),
+            .init(.{ 1.0 / 3.0, 1.0, -2.0 / 3.0 }),
+        ).values;
         if (!@reduce(.And, @abs(expected - actual) < tolerance)) {
             std.debug.print("actual {}, not within absolute tolerance {} of expected {}\n", .{
                 actual,
